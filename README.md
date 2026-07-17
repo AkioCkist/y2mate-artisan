@@ -259,11 +259,3 @@ yt-downloader-electron/
    - Nhấp vào biểu tượng thư mục bên cạnh **Nơi lưu tệp** để chọn nơi lưu trữ video/âm thanh sau khi tải.
 4. **Tải xuống**: Nhấp nút **Tải xuống**. Xem phần trăm, tốc độ tải và các dòng log chi tiết trong hàng đợi tải xuống.
 5. **Quản lý**: Bạn có thể bấm nút **Hủy** để dừng tiến trình tải bất cứ lúc nào. Khi tải xong, bấm **Mở thư mục** để xem tệp tin đã tải!
-
----
-
-## 📄 License / Giấy phép
-
-Distributed under the ISC License. Xem `package.json` để biết thêm chi tiết.
-
-Phát triển bởi **Antigravity**.
