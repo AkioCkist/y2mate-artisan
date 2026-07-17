@@ -13,12 +13,12 @@ function getBinPaths() {
   };
 }
 
+let _ytDlpCmd = null;
 function getYtDlpCommand() {
+  if (_ytDlpCmd) return _ytDlpCmd;
   const paths = getBinPaths();
-  if (fs.existsSync(paths.ytDlp)) {
-    return paths.ytDlp;
-  }
-  return 'yt-dlp';
+  _ytDlpCmd = fs.existsSync(paths.ytDlp) ? paths.ytDlp : 'yt-dlp';
+  return _ytDlpCmd;
 }
 
 // Cấu hình thư mục dữ liệu cục bộ để tránh lỗi "Access is denied" khi truy cập cache
@@ -52,7 +52,7 @@ if (app.isPackaged) {
 // app.commandLine.appendSwitch('disable-gpu-sandbox');
 
 // Auto-download yt-dlp (and ffmpeg on Windows) if missing
-const { ensureYtDlp } = require('./bin-downloader');
+const { ensureYtDlpSafe } = require('./bin-downloader');
 
 let mainWindow;
 const activeDownloads = new Map();
@@ -79,10 +79,16 @@ function createWindow() {
 
   mainWindow.loadFile('index.html');
 
-  // Show window when it is ready to avoid flashing
+  // Show window when ready, with fallback timeout if load hangs
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
   });
+  mainWindow.webContents.on('did-fail-load', () => {
+    mainWindow.show();
+  });
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isVisible()) mainWindow.show();
+  }, 8000);
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -90,11 +96,14 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  // Auto-download yt-dlp + ffmpeg if missing (no manual PATH setup needed)
-  console.log('[main] Checking local binaries...');
-  await ensureYtDlp(binDir);
-
+  // Create window FIRST so user sees UI immediately
   createWindow();
+
+  // Then check binaries in background — non-blocking, with timeout
+  console.log('[main] Checking local binaries...');
+  ensureYtDlpSafe(binDir).then(success => {
+    console.log('[main] Binary check complete:', success);
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -167,18 +176,20 @@ async function getSoundcloudClientId() {
       scriptUrls.push(match[1]);
     }
 
-    for (const url of scriptUrls.slice().reverse()) {
-      try {
+    // Fetch all scripts in parallel, resolve on first match
+    const scriptResults = await Promise.allSettled(
+      scriptUrls.map(async (url) => {
         const scriptRes = await fetch(url);
         const scriptText = await scriptRes.text();
         const idRegex = /client_id\s*:\s*["']([a-zA-Z0-9]{32})["']/i;
         const idMatch = idRegex.exec(scriptText);
-        if (idMatch) {
-          soundcloudClientId = idMatch[1];
-          return soundcloudClientId;
-        }
-      } catch (e) {
-        console.error(`Error reading SoundCloud script: ${url}`, e.message);
+        return idMatch ? idMatch[1] : null;
+      })
+    );
+    for (const result of scriptResults) {
+      if (result.status === 'fulfilled' && result.value) {
+        soundcloudClientId = result.value;
+        return soundcloudClientId;
       }
     }
   } catch (e) {

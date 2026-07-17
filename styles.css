@@ -508,8 +508,8 @@ select:focus { border-color: var(--accent-from); }
   height: 100%;
   background: var(--accent-gradient);
   border-radius: 11px;
-  transition: width 0.15s ease-out;
-  /* No background-position animation — expensive on GPU */
+  transform-origin: left;
+  transition: transform 0.15s ease-out;
 }
 .progress-percent {
   position: absolute;
@@ -677,10 +677,6 @@ select:focus { border-color: var(--accent-from); }
 }
 
 /* ─── Animations ─── */
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
 @keyframes slideDown {
   from { opacity: 0; transform: translateY(-10px); }
   to { opacity: 1; transform: translateY(0); }
@@ -827,8 +823,6 @@ select:focus { border-color: var(--accent-from); }
 }
 .setup-overlay.hidden {
   display: none !important;
-  pointer-events: none;
-  opacity: 0;
 }
 
 .setup-card {

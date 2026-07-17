@@ -260,7 +260,7 @@ const dict = {
 };
 
 // ─── Globals ───
-window.__lang = localStorage.getItem(LANG_STORAGE_KEY) || 'vi';
+try { window.__lang = localStorage.getItem(LANG_STORAGE_KEY) || 'vi'; } catch (_) { window.__lang = 'vi'; }
 if (!dict[window.__lang]) window.__lang = 'vi';
 
 function t(keyPath) {

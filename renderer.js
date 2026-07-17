@@ -52,13 +52,15 @@ const settingsDestPathDisplay = document.getElementById('settings-dest-path-disp
 let currentVideoInfo = null;
 let currentDownloadId = null;
 let currentDestPath = localStorage.getItem('yt_dlp_dest_path') || '';
-let history = JSON.parse(localStorage.getItem('yt_dlp_history') || '[]');
+let history = [];
+try { history = JSON.parse(localStorage.getItem('yt_dlp_history') || '[]'); } catch (_) { history = []; }
 let currentPlaylistIndex = 0;
 let totalPlaylistItems = 0;
 
 // Per-track download options (playlist only) — Map<index, { formatType, quality }>
 // null/undefined means "use global defaults"
 let perTrackOptions = new Map();
+let perTrackFormats = new Map(); // cached format data per track index
 let selectedTrackIdx = null; // null = global config mode
 
 // Default qualities — translated via i18n
@@ -149,7 +151,7 @@ async function init() {
 
   // Setup Event Listeners
   btnAnalyze.addEventListener('click', analyzeUrl);
-  urlInput.addEventListener('keypress', (e) => {
+  urlInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') analyzeUrl();
   });
 
@@ -181,7 +183,14 @@ async function init() {
     langSelect.addEventListener('change', (e) => {
       setLanguage(e.target.value);
       applyI18n();
-      if (typeVideo.checked && currentVideoInfo && !currentVideoInfo.isPlaylist && currentVideoInfo.formats) {
+      if (selectedTrackIdx !== null) {
+        // Re-populate with per-track formats
+        const tFormats = perTrackFormats.get(selectedTrackIdx);
+        const tSaved = perTrackOptions.get(selectedTrackIdx);
+        const tFmt = tSaved ? tSaved.formatType : typeVideo.checked ? 'video' : 'audio';
+        if (tFmt === 'video' && tFormats) populateQualities('video', tFormats);
+        else populateQualities(tFmt, null);
+      } else if (typeVideo.checked && currentVideoInfo && !currentVideoInfo.isPlaylist && currentVideoInfo.formats) {
         populateQualities('video', currentVideoInfo.formats);
       } else {
         populateQualities(typeVideo.checked ? 'video' : 'audio');
@@ -200,7 +209,7 @@ async function init() {
   window.api.onDownloadProgress((data) => {
     if (data.id !== currentDownloadId) return;
 
-    progressFill.style.width = `${data.percent}%`;
+    progressFill.style.transform = `scaleX(${data.percent / 100})`;
     progressPercent.textContent = `${Math.round(data.percent)}%`;
     statSpeed.textContent = `${t('progress.speed')}: ${data.speed}`;
     statEta.textContent = `${t('progress.eta')}: ${data.eta}`;
@@ -230,8 +239,13 @@ async function init() {
 function onFormatTypeChange() {
   const isVideo = typeVideo.checked;
   if (selectedTrackIdx !== null) {
-    // In per-track mode: update options and save
-    populateQualities(isVideo ? 'video' : 'audio', null);
+    // In per-track mode: use cached formats for this track if available
+    const trackFormats = perTrackFormats.get(selectedTrackIdx);
+    if (isVideo && trackFormats) {
+      populateQualities('video', trackFormats);
+    } else {
+      populateQualities(isVideo ? 'video' : 'audio', null);
+    }
     const newFmt = isVideo ? 'video' : 'audio';
     perTrackOptions.set(selectedTrackIdx, { formatType: newFmt, quality: selectQuality.value });
   } else if (currentVideoInfo && !currentVideoInfo.isPlaylist && currentVideoInfo.formats) {
@@ -311,16 +325,47 @@ function selectTrack(idx) {
     videoDuration.textContent = currentVideoInfo.duration ? formatDuration(currentVideoInfo.duration) : '00:00';
   }
 
-  // Load saved per-track options into main config
+  // Load saved per-track options
   const saved = perTrackOptions.get(idx);
   const fmt = saved ? saved.formatType : typeVideo.checked ? 'video' : 'audio';
-  const qty = saved ? saved.quality : selectQuality.value;
+  let qty = saved ? saved.quality : selectQuality.value;
 
   if (fmt === 'video') typeVideo.checked = true;
   else typeAudio.checked = true;
 
-  populateQualities(fmt, null); // static list for tracks
-  if (selectQuality.querySelector(`option[value="${qty}"]`)) selectQuality.value = qty;
+  // ═══ Fetch per-track formats dynamically ═══
+  async function loadTrackFormats() {
+    const trackUrl = entries[idx].url;
+    if (!trackUrl) {
+      populateQualities(fmt, null);
+      if (selectQuality.querySelector(`option[value="${qty}"]`)) selectQuality.value = qty;
+      return;
+    }
+
+    // Check cache first
+    let formats = null;
+    if (perTrackFormats.has(idx)) {
+      formats = perTrackFormats.get(idx);
+    } else {
+      try {
+        const info = await window.api.getVideoInfo(trackUrl);
+        if (info && info.success && !info.isPlaylist && info.info && info.info.formats) {
+          formats = info.info.formats;
+          perTrackFormats.set(idx, formats);
+        }
+      } catch (err) {
+        console.warn(`Failed to fetch formats for track ${idx}:`, err.message);
+      }
+    }
+
+    if (fmt === 'video' && formats) {
+      populateQualities('video', formats);
+    } else {
+      populateQualities(fmt, null);
+    }
+    if (selectQuality.querySelector(`option[value="${qty}"]`)) selectQuality.value = qty;
+  }
+  loadTrackFormats();
 
   // Save quality change to per-track options
   const qualityChangeHandler = () => {
@@ -343,17 +388,15 @@ function deselectTrack() {
   const indicator = document.getElementById('track-indicator');
   if (indicator) indicator.classList.add('hidden');
 
-  // Restore global format/quality
-  const savedType = localStorage.getItem('yt_dlp_global_type') || 'video';
-  if (savedType === 'video') typeVideo.checked = true;
-  else typeAudio.checked = true;
-
+  // Restore global format/quality — use playlist-level formats if available
   if (currentVideoInfo && !currentVideoInfo.isPlaylist && currentVideoInfo.formats) {
     populateQualities('video', currentVideoInfo.formats);
   } else {
+    const savedType = localStorage.getItem('yt_dlp_global_type') || 'video';
     populateQualities(savedType);
   }
-  selectQuality.value = selectQuality.querySelector('option')?.value || 'best';
+  const firstOpt = selectQuality.querySelector('option');
+  if (firstOpt) selectQuality.value = firstOpt.value;
 
   // Restore original playlist thumbnail/duration
   if (currentVideoInfo && currentVideoInfo.thumbnail) {
@@ -377,9 +420,11 @@ function renderPlaylistEntries(entries) {
   }
 
   perTrackOptions = new Map();
+  perTrackFormats = new Map();
   selectedTrackIdx = null;
   document.getElementById('track-indicator')?.classList.add('hidden');
 
+  const frag = document.createDocumentFragment();
   entries.forEach((entry, idx) => {
     const itemEl = document.createElement('div');
     itemEl.className = 'playlist-entry-item';
@@ -409,8 +454,9 @@ function renderPlaylistEntries(entries) {
       else selectTrack(idx);
     });
 
-    playlistEntriesList.appendChild(itemEl);
+    frag.appendChild(itemEl);
   });
+  playlistEntriesList.appendChild(frag);
 }
 
 // Toggle checkboxes helper
@@ -571,7 +617,7 @@ async function startDownload() {
 
   // Update Progress UI
   downloadingTitle.textContent = (currentVideoInfo.isPlaylist ? t('progress.downloadingPlaylist') : t('progress.downloading')) + ': ' + currentVideoInfo.title;
-  progressFill.style.width = '0%';
+  progressFill.style.transform = 'scaleX(0)';
   progressPercent.textContent = '0%';
   statSpeed.textContent = t('progress.connecting');
   statEta.textContent = `${t('progress.eta')}: --:--`;
@@ -705,9 +751,13 @@ async function cancelActiveDownload() {
     // Try cancel main ID, then any per-track IDs
     let canceled = false;
     try { canceled = await window.api.cancelDownload(currentDownloadId); } catch (_) {}
-    // Also try cancel any running per-track downloads
+    // Try cancel any running per-track downloads (max 50 tracks)
     for (let i = 0; i < 50; i++) {
-      try { await window.api.cancelDownload(currentDownloadId + '-' + i); } catch (_) { break; }
+      const id = currentDownloadId + '-' + i;
+      try {
+        const res = await window.api.cancelDownload(id);
+        if (!res) break;
+      } catch (_) { break; }
     }
     if (canceled) {
       appendLog(`[${t('log.cancelled')}]`);
@@ -726,12 +776,26 @@ async function cancelActiveDownload() {
 }
 
 // Append logs to terminal element
+let _logBuffer = [];
+let _logRafPending = false;
+
 function appendLog(line) {
-  const lineEl = document.createElement('div');
-  lineEl.textContent = line;
-  logConsole.appendChild(lineEl);
-  // Auto scroll to bottom
-  logConsole.scrollTop = logConsole.scrollHeight;
+  _logBuffer.push(line);
+  if (!_logRafPending) {
+    _logRafPending = true;
+    requestAnimationFrame(() => {
+      _logRafPending = false;
+      const frag = document.createDocumentFragment();
+      for (const msg of _logBuffer) {
+        const el = document.createElement('div');
+        el.textContent = msg;
+        frag.appendChild(el);
+      }
+      _logBuffer = [];
+      logConsole.appendChild(frag);
+      logConsole.scrollTop = logConsole.scrollHeight;
+    });
+  }
 }
 
 // Toggle Logs collapsible

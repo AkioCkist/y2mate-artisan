@@ -70,12 +70,10 @@ function downloadFile(url, destPath) {
 
 function extractZip(zipPath, extractDir) {
   return new Promise((resolve, reject) => {
-    const isWin = process.platform === 'win32';
-    // Use PowerShell Expand-Archive on Windows (built-in, no deps needed)
     const psCmd = `
       Expand-Archive -Path '${zipPath.replace(/'/g, "''")}' -DestinationPath '${extractDir.replace(/'/g, "''")}' -Force
     `;
-    const child = spawn('powershell', ['-NoProfile', '-Command', psCmd], { stdio: 'pipe' });
+    const child = spawn('powershell', ['-NoProfile', '-Command', psCmd], { stdio: 'pipe', timeout: 120000 });
     let stderr = '';
     child.stderr.on('data', (d) => { stderr += d.toString(); });
     child.on('close', (code) => {
@@ -136,22 +134,28 @@ async function ensureYtDlp(binDir) {
       console.log(`[bin-downloader] yt-dlp downloaded to ${ytDlpPath}`);
     }
 
-    // Windows: also download ffmpeg + ffprobe via zip (like installer does)
-    if (isWin && urls.ffmpeg && !fs.existsSync(ffmpegPath)) {
-      console.log(`[bin-downloader] Downloading ffmpeg...`);
-      const zipPath = path.join(binDir, 'ffmpeg.zip');
-      await downloadFile(urls.ffmpeg, zipPath);
-      await extractZip(zipPath, binDir);
-      // ffmpeg zip extracts to ffmpeg.exe directly
-      console.log(`[bin-downloader] ffmpeg installed`);
-    }
-
-    if (isWin && urls.ffprobe && !fs.existsSync(ffprobePath)) {
-      console.log(`[bin-downloader] Downloading ffprobe...`);
-      const zipPath = path.join(binDir, 'ffprobe.zip');
-      await downloadFile(urls.ffprobe, zipPath);
-      await extractZip(zipPath, binDir);
-      console.log(`[bin-downloader] ffprobe installed`);
+    // Windows: download ffmpeg + ffprobe in parallel
+    if (isWin) {
+      const dlTasks = [];
+      if (urls.ffmpeg && !fs.existsSync(ffmpegPath)) {
+        console.log(`[bin-downloader] Downloading ffmpeg...`);
+        dlTasks.push((async () => {
+          const zipPath = path.join(binDir, 'ffmpeg.zip');
+          await downloadFile(urls.ffmpeg, zipPath);
+          await extractZip(zipPath, binDir);
+          console.log(`[bin-downloader] ffmpeg installed`);
+        })());
+      }
+      if (urls.ffprobe && !fs.existsSync(ffprobePath)) {
+        console.log(`[bin-downloader] Downloading ffprobe...`);
+        dlTasks.push((async () => {
+          const zipPath = path.join(binDir, 'ffprobe.zip');
+          await downloadFile(urls.ffprobe, zipPath);
+          await extractZip(zipPath, binDir);
+          console.log(`[bin-downloader] ffprobe installed`);
+        })());
+      }
+      await Promise.all(dlTasks);
     }
 
     return true;
@@ -161,4 +165,17 @@ async function ensureYtDlp(binDir) {
   }
 }
 
-module.exports = { ensureYtDlp };
+// Wrapper with timeout so startup never hangs on download/extract
+async function ensureYtDlpSafe(binDir, timeoutMs = 180000) {
+  const timer = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('timeout')), timeoutMs)
+  );
+  try {
+    return await Promise.race([ensureYtDlp(binDir), timer]);
+  } catch (err) {
+    console.error(`[bin-downloader] Timed out or failed (${err.message}), continuing without binaries`);
+    return false;
+  }
+}
+
+module.exports = { ensureYtDlp, ensureYtDlpSafe };
