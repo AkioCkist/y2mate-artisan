@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YT-DLP Premium Downloader</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+  <!-- Drag area for window -->
+  <div class="window-titlebar">
+    <div class="titlebar-drag-area"></div>
+    <div class="titlebar-title">YT-DLP Downloader</div>
+  </div>
+
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo-wrapper">
+        <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path
+            d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 3.88 12 3.88 12 3.88s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"
+            fill="url(#logo-grad)" />
+          <path d="M9.75 15.02l6-3.27-6-3.27v6.54z" fill="#ffffff" />
+          <defs>
+            <linearGradient id="logo-grad" x1="1" y1="11.75" x2="23" y2="11.75" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#ff007f" />
+              <stop offset="1" stop-color="#7928ca" />
+            </linearGradient>
+          </defs>
+        </svg>
+        <h1>YT-DLP <span class="gradient-text">Downloader</span></h1>
+      </div>
+      <p class="subtitle">
+        Trình tải đa phương tiện sử dụng yt-dlp
+        <button id="btn-open-settings" class="btn-settings-link" title="Cài đặt hệ thống">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <span>Cài đặt</span>
+        </button>
+      </p>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+
+
+      <!-- Input Section -->
+      <section class="card input-section">
+        <div class="input-group">
+          <input type="text" id="video-url" placeholder="Dán link YouTube (hoặc web khác) vào đây..."
+            autocomplete="off">
+          <button id="btn-analyze" class="btn btn-primary">
+            <span class="btn-text">Phân tích</span>
+            <svg class="spinner hidden" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-linecap="round"
+                stroke-dasharray="30 30" opacity="0.3"></circle>
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-linecap="round"
+                stroke-dasharray="30 150" class="spinner-path"></circle>
+            </svg>
+          </button>
+        </div>
+        <div id="error-message" class="error-msg hidden"></div>
+      </section>
+
+      <!-- Preview & Config Section -->
+      <section id="preview-section" class="card preview-card hidden">
+        <div class="preview-layout">
+          <!-- Thumbnail & Info -->
+          <div class="preview-info-col">
+            <div class="thumbnail-wrapper">
+              <img id="video-thumbnail" src="" alt="Thumbnail">
+              <span id="video-duration" class="duration-badge">00:00</span>
+            </div>
+            <div class="video-meta">
+              <h2 id="video-title" class="video-title">Tiêu đề video</h2>
+              <p id="video-uploader" class="video-uploader">Kênh tải lên</p>
+            </div>
+          </div>
+
+          <!-- Configuration -->
+          <div class="preview-config-col">
+            <h3>Cấu hình tải xuống</h3>
+
+            <div class="config-group">
+              <label>Định dạng tệp</label>
+              <div class="radio-toggle-group">
+                <input type="radio" id="type-video" name="format-type" value="video" checked>
+                <label for="type-video">Video (MP4)</label>
+
+                <input type="radio" id="type-audio" name="format-type" value="audio">
+                <label for="type-audio">Audio (Nhạc)</label>
+              </div>
+            </div>
+
+            <div class="config-group">
+              <label for="select-quality">Chất lượng / Định dạng</label>
+              <select id="select-quality">
+                <!-- Will be dynamically populated -->
+              </select>
+            </div>
+
+            <div class="config-group">
+              <label>Nơi lưu tệp</label>
+              <div class="dest-selector">
+                <span id="dest-path-display" class="path-display">Chưa chọn thư mục...</span>
+                <button id="btn-browse" class="btn btn-secondary btn-icon-only" title="Chọn thư mục">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="config-group">
+              <label>Tùy chọn bổ sung</label>
+              <div class="checkbox-group">
+                <label class="checkbox-container">
+                  <input type="checkbox" id="chk-embed-metadata" checked>
+                  <span class="checkbox-label">Nhúng Metadata đầy đủ (Tên, Tác giả...)</span>
+                </label>
+                <label class="checkbox-container">
+                  <input type="checkbox" id="chk-embed-thumbnail" checked>
+                  <span class="checkbox-label">Nhúng ảnh Thumbnail vào file</span>
+                </label>
+              </div>
+            </div>
+
+            <button id="btn-download" class="btn btn-success btn-full">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
+                style="margin-right: 8px;">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+              </svg>
+              Tải xuống ngay
+            </button>
+          </div>
+        </div>
+
+        <!-- Playlist Entries List (Only shown for playlists) -->
+        <div id="playlist-entries-wrapper" class="playlist-entries-wrapper hidden">
+          <div class="playlist-entries-header">
+            <h3>Danh sách bài hát</h3>
+            <div class="playlist-selection-controls">
+              <button type="button" id="btn-select-all" class="btn-link">Chọn tất cả</button>
+              <span class="separator">|</span>
+              <button type="button" id="btn-deselect-all" class="btn-link">Bỏ chọn tất cả</button>
+            </div>
+          </div>
+          <div id="playlist-entries-list" class="playlist-entries-list">
+            <!-- Dynamically populated entries -->
+          </div>
+        </div>
+      </section>
+
+      <!-- Active Download Progress -->
+      <section id="progress-section" class="card progress-card hidden">
+        <div class="progress-header">
+          <div>
+            <h3 id="downloading-title">Đang tải: Tiêu đề video...</h3>
+            <div class="progress-stats">
+              <span id="stat-speed">Tốc độ: 0 MB/s</span>
+              <span class="separator">•</span>
+              <span id="stat-eta">Còn lại: --:--</span>
+              <span class="separator">•</span>
+              <span id="stat-size">Dung lượng: -- MB</span>
+            </div>
+          </div>
+          <button id="btn-cancel" class="btn btn-danger">Hủy tải</button>
+        </div>
+
+        <div class="progress-bar-container">
+          <div id="progress-fill" class="progress-fill" style="width: 0%;"></div>
+          <span id="progress-percent" class="progress-percent">0%</span>
+        </div>
+
+        <!-- Terminal log output -->
+        <div class="log-section">
+          <button id="btn-toggle-log" class="btn-toggle-log">
+            <span>Chi tiết tiến trình (Terminal Log)</span>
+            <svg id="log-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+              stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+          <div id="log-console" class="log-console hidden">
+            <!-- Real-time stdout lines -->
+          </div>
+        </div>
+      </section>
+
+      <!-- History Section -->
+      <section class="card history-card">
+        <div class="section-title-wrapper">
+          <h2>Lịch sử tải xuống</h2>
+          <button id="btn-clear-history" class="btn-link">Xóa tất cả</button>
+        </div>
+        <div id="history-list" class="history-list">
+          <div class="empty-history">Chưa có tệp nào được tải xuống gần đây.</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+
+
+
+  <!-- Settings Overlay (shown when settings button clicked) -->
+  <div id="settings-overlay" class="setup-overlay hidden">
+    <div class="setup-card animate-fade-in" style="max-width: 600px; width: 90%; text-align: left;">
+      <div class="logo-wrapper" style="justify-content: flex-start;">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="url(#settings-logo-grad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 2px 8px rgba(139, 92, 246, 0.4));">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          <defs>
+            <linearGradient id="settings-logo-grad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#ff007f" />
+              <stop offset="1" stop-color="#7928ca" />
+            </linearGradient>
+          </defs>
+        </svg>
+        <h2 style="margin: 0;">Cài đặt <span class="gradient-text">Hệ thống</span></h2>
+      </div>
+
+      <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 20px;">
+        <!-- Download destination configuration -->
+        <div class="config-group">
+          <label style="font-size: 0.85rem; font-weight: 500; color: var(--text-secondary);">Thư mục tải xuống mặc định</label>
+          <div class="dest-selector">
+            <span id="settings-dest-path-display" class="path-display" style="max-width: calc(100% - 55px);">Chưa chọn thư mục...</span>
+            <button id="btn-settings-browse" class="btn btn-secondary btn-icon-only" title="Chọn thư mục" style="padding: 10px;">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <div style="margin-top: 10px; display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid var(--card-border); padding-top: 15px;">
+        <button id="btn-close-settings" class="btn btn-secondary" style="padding: 8px 20px; font-size: 0.9rem;">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+
+</html>
