@@ -56,20 +56,54 @@ let history = JSON.parse(localStorage.getItem('yt_dlp_history') || '[]');
 let currentPlaylistIndex = 0;
 let totalPlaylistItems = 0;
 
-// Default qualities
-const videoQualities = [
-  { name: 'Chất lượng tốt nhất (Best Quality)', value: 'best' },
-  { name: '1080p Full HD (MP4)', value: '1080p' },
-  { name: '720p HD (MP4)', value: '720p' },
-  { name: '480p SD (MP4)', value: '480p' }
-];
+// Default qualities — translated via i18n
+function getVideoQualities() {
+  return [
+    { name: t('quality.best'), value: 'best' },
+    { name: t('quality.fhd'), value: '1080p' },
+    { name: t('quality.hd'), value: '720p' },
+    { name: t('quality.sd'), value: '480p' }
+  ];
+}
 
-const audioQualities = [
-  { name: 'MP3 320 kbps (High Quality)', value: 'mp3-320' },
-  { name: 'MP3 192 kbps (Standard)', value: 'mp3-192' },
-  { name: 'WAV (Lossless Audio)', value: 'wav' },
-  { name: 'M4A (AAC Audio)', value: 'm4a' }
-];
+function getAudioQualities() {
+  return [
+    { name: t('quality.mp3_320'), value: 'mp3-320' },
+    { name: t('quality.mp3_192'), value: 'mp3-192' },
+    { name: t('quality.wav'), value: 'wav' },
+    { name: t('quality.m4a'), value: 'm4a' }
+  ];
+}
+
+// Extract unique video resolutions from formats array
+function getUniqueResolutions(formats) {
+  if (!formats || !Array.isArray(formats)) return [];
+  const heights = new Set();
+  formats.forEach(f => {
+    // Skip audio-only / no-video formats
+    if (!f.vcodec || f.vcodec === 'none' || !f.resolution) return;
+    // Parse height from resolution like "1920x1080"
+    const match = f.resolution.match(/x(\d+)/);
+    if (!match) return;
+    const h = parseInt(match[1], 10);
+    if (h > 0) heights.add(h);
+  });
+  return Array.from(heights).sort((a, b) => b - a);
+}
+
+// Friendly display name for resolution height
+function resolutionLabel(height) {
+  const labels = {
+    4320: '8K',
+    2160: '4K',
+    1440: '1440p (2K)',
+    1080: '1080p Full HD',
+    720: '720p HD',
+    480: '480p SD',
+    360: '360p',
+  };
+  return labels[height] || `${height}p`;
+}
 
 
 
@@ -98,8 +132,11 @@ async function init() {
       settingsDestPathDisplay.title = currentDestPath;
     }
   } else {
-    destPathDisplay.textContent = 'Chưa chọn thư mục. Vui lòng bấm chọn...';
+    destPathDisplay.textContent = t('preview.noDest');
   }
+
+  // Apply i18n translations to static elements
+  applyI18n();
 
   // Populate qualities for default selection (video)
   populateQualities('video');
@@ -111,7 +148,13 @@ async function init() {
     if (e.key === 'Enter') analyzeUrl();
   });
 
-  typeVideo.addEventListener('change', () => populateQualities('video'));
+  typeVideo.addEventListener('change', () => {
+    if (currentVideoInfo && !currentVideoInfo.isPlaylist && currentVideoInfo.formats) {
+      populateQualities('video', currentVideoInfo.formats);
+    } else {
+      populateQualities('video');
+    }
+  });
   typeAudio.addEventListener('change', () => populateQualities('audio'));
 
   btnBrowse.addEventListener('click', selectDestDirectory);
@@ -129,15 +172,36 @@ async function init() {
   if (btnCloseSettings) btnCloseSettings.addEventListener('click', closeSettingsModal);
   if (btnSettingsBrowse) btnSettingsBrowse.addEventListener('click', selectSettingsDestDirectory);
 
+  // Language change handler
+  const langSelect = document.getElementById('select-language');
+  if (langSelect) {
+    langSelect.addEventListener('change', (e) => {
+      setLanguage(e.target.value);
+      applyI18n();
+      if (typeVideo.checked && currentVideoInfo && !currentVideoInfo.isPlaylist && currentVideoInfo.formats) {
+        populateQualities('video', currentVideoInfo.formats);
+      } else {
+        populateQualities(typeVideo.checked ? 'video' : 'audio');
+      }
+      renderHistory();
+      if (currentDestPath) {
+        destPathDisplay.textContent = currentDestPath;
+        if (settingsDestPathDisplay) settingsDestPathDisplay.textContent = currentDestPath;
+      } else {
+        destPathDisplay.textContent = t('preview.noDest');
+      }
+    });
+  }
+
   // Setup IPC Subscriptions
   window.api.onDownloadProgress((data) => {
     if (data.id !== currentDownloadId) return;
 
     progressFill.style.width = `${data.percent}%`;
     progressPercent.textContent = `${Math.round(data.percent)}%`;
-    statSpeed.textContent = `Tốc độ: ${data.speed}`;
-    statEta.textContent = `Còn lại: ${data.eta}`;
-    statSize.textContent = `Dung lượng: ${data.totalSize}`;
+    statSpeed.textContent = `${t('progress.speed')}: ${data.speed}`;
+    statEta.textContent = `${t('progress.eta')}: ${data.eta}`;
+    statSize.textContent = `${t('progress.size')}: ${data.totalSize}`;
 
     if (data.logLine) {
       appendLog(data.logLine);
@@ -155,14 +219,29 @@ async function init() {
     if (data.id !== currentDownloadId) return;
     currentPlaylistIndex = data.currentItem;
     totalPlaylistItems = data.totalItems;
-    downloadingTitle.textContent = `Đang tải (${currentPlaylistIndex}/${totalPlaylistItems}): ${currentVideoInfo.title}`;
+    downloadingTitle.textContent = `${t('progress.downloading')} (${currentPlaylistIndex}/${totalPlaylistItems}): ${currentVideoInfo.title}`;
   });
 }
 
 // Populate quality choices
-function populateQualities(type) {
+// For video: dynamic resolutions from formats; for audio: static presets
+function populateQualities(type, formats) {
   selectQuality.innerHTML = '';
-  const qualities = type === 'video' ? videoQualities : audioQualities;
+  let qualities;
+  if (type === 'video') {
+    const resolutions = formats ? getUniqueResolutions(formats) : [];
+    if (resolutions.length > 0) {
+      // Add "Best Quality" first, then all available resolutions
+      qualities = [{ name: t('quality.best'), value: 'best' }];
+      resolutions.forEach(h => {
+        qualities.push({ name: resolutionLabel(h), value: `${h}p` });
+      });
+    } else {
+      qualities = getVideoQualities();
+    }
+  } else {
+    qualities = getAudioQualities();
+  }
   qualities.forEach(q => {
     const opt = document.createElement('option');
     opt.value = q.value;
@@ -175,7 +254,7 @@ function populateQualities(type) {
 function renderPlaylistEntries(entries) {
   playlistEntriesList.innerHTML = '';
   if (!entries || entries.length === 0) {
-    playlistEntriesList.innerHTML = '<div class="empty-history">Không có bài hát nào trong playlist này.</div>';
+    playlistEntriesList.innerHTML = `<div class="empty-history">${t('playlist.empty')}</div>`;
     return;
   }
   
@@ -244,13 +323,13 @@ function showError(msg) {
 async function analyzeUrl() {
   const url = urlInput.value.trim();
   if (!url) {
-    showError('Vui lòng nhập đường dẫn video hợp lệ.');
+    showError(t('error.emptyUrl'));
     return;
   }
 
   showError(null);
   btnAnalyze.disabled = true;
-  btnAnalyzeText.textContent = 'Đang phân tích...';
+  btnAnalyzeText.textContent = t('btn.analyzing');
   spinner.classList.remove('hidden');
   previewSection.classList.add('hidden');
 
@@ -265,30 +344,39 @@ async function analyzeUrl() {
       // Update UI
       videoThumbnail.src = currentVideoInfo.thumbnail || '';
       if (currentVideoInfo.isPlaylist) {
-        videoDuration.textContent = `${currentVideoInfo.entriesCount} bài`;
-        videoTitle.textContent = `[Playlist] ${currentVideoInfo.title || 'Danh sách phát'}`;
-        
+        videoDuration.textContent = `${currentVideoInfo.entriesCount} ${t('preview.tracks')}`;
+        videoTitle.textContent = `[${t('preview.playlist')}] ${currentVideoInfo.title || ''}`;
+
         // Render playlist tracks
         renderPlaylistEntries(currentVideoInfo.entries);
         playlistEntriesWrapper.classList.remove('hidden');
+        // Playlist: use static video qualities (no per-video format data)
+        populateQualities('video', null);
       } else {
         videoDuration.textContent = formatDuration(currentVideoInfo.duration);
-        videoTitle.textContent = currentVideoInfo.title || 'Unknown Title';
+        videoTitle.textContent = currentVideoInfo.title || t('preview.unknownTitle');
         playlistEntriesWrapper.classList.add('hidden');
         playlistEntriesList.innerHTML = '';
+        // Single video: populate qualities from actual available resolutions
+        const currentType = typeVideo.checked ? 'video' : 'audio';
+        if (currentType === 'video') {
+          populateQualities('video', currentVideoInfo.formats);
+        } else {
+          populateQualities('audio');
+        }
       }
-      videoUploader.textContent = currentVideoInfo.uploader || 'Unknown Channel';
-      
+      videoUploader.textContent = currentVideoInfo.uploader || t('preview.unknownChannel');
+
       previewSection.classList.remove('hidden');
     } else {
-      showError('Không lấy được thông tin video.');
+      showError(t('error.noInfo'));
     }
   } catch (error) {
     console.error(error);
-    showError(error.message || 'Lỗi khi phân tích đường dẫn. Vui lòng kiểm tra lại URL hoặc cài đặt yt-dlp.');
+    showError(error.message || t('error.analysisFailed'));
   } finally {
     btnAnalyze.disabled = false;
-    btnAnalyzeText.textContent = 'Phân tích';
+    btnAnalyzeText.textContent = t('btn.analyze');
     spinner.classList.add('hidden');
   }
 }
@@ -308,7 +396,7 @@ async function selectDestDirectory() {
         settingsDestPathDisplay.textContent = path;
         settingsDestPathDisplay.title = path;
       }
-      showError(null); // Clear errors like "Vui lòng chọn thư mục lưu"
+      showError(null);
     }
   } catch (err) {
     console.error(err);
@@ -320,7 +408,7 @@ async function startDownload() {
   if (!currentVideoInfo) return;
 
   if (!currentDestPath) {
-    showError('Vui lòng chọn thư mục lưu tệp trước khi tải xuống.');
+    showError(t('error.noDest'));
     btnBrowse.focus();
     return;
   }
@@ -336,7 +424,7 @@ async function startDownload() {
   if (currentVideoInfo.isPlaylist) {
     const checkboxes = playlistEntriesList.querySelectorAll('.playlist-entry-checkbox:checked');
     if (checkboxes.length === 0) {
-      showError('Vui lòng chọn ít nhất một bài hát để tải xuống.');
+      showError(t('error.noSelection'));
       return;
     }
     
@@ -354,24 +442,23 @@ async function startDownload() {
   totalPlaylistItems = 0;
 
   // Update Progress UI
-  downloadingTitle.textContent = currentVideoInfo.isPlaylist 
-    ? `Đang tải playlist: ${currentVideoInfo.title}` 
-    : `Đang tải: ${currentVideoInfo.title}`;
+  downloadingTitle.textContent = (currentVideoInfo.isPlaylist ? t('progress.downloadingPlaylist') : t('progress.downloading')) + ': ' + currentVideoInfo.title;
   progressFill.style.width = '0%';
   progressPercent.textContent = '0%';
-  statSpeed.textContent = 'Tốc độ: Đang kết nối...';
-  statEta.textContent = 'Còn lại: --:--';
-  statSize.textContent = 'Dung lượng: -- MB';
+  statSpeed.textContent = t('progress.connecting');
+  statEta.textContent = `${t('progress.eta')}: --:--`;
+  statSize.textContent = `${t('progress.size')}: ${t('progress.mb')}`;
   logConsole.innerHTML = '';
   
   progressSection.classList.remove('hidden');
   previewSection.classList.add('hidden');
   btnAnalyze.disabled = true;
 
-  appendLog(`[Hệ thống] Bắt đầu tải ${currentVideoInfo.isPlaylist ? 'playlist' : 'video'}: ${currentVideoInfo.title}`);
-  appendLog(`[Hệ thống] Định dạng: ${formatType === 'video' ? 'Video (MP4)' : 'Audio (Nhạc)'}`);
-  appendLog(`[Hệ thống] Chất lượng chọn: ${quality}`);
-  appendLog(`[Hệ thống] Thư mục lưu: ${currentDestPath}`);
+  const mediaType = currentVideoInfo.isPlaylist ? t('log.playlist') : t('log.video');
+  appendLog(`[${t('log.start')}] ${mediaType}: ${currentVideoInfo.title}`);
+  appendLog(`[${t('log.format')}] ${formatType === 'video' ? t('log.video_mp4') : t('log.audio_mp3')}`);
+  appendLog(`[${t('log.quality')}] ${quality}`);
+  appendLog(`[${t('log.dest')}] ${currentDestPath}`);
 
   try {
     const embedMetadata = document.getElementById('chk-embed-metadata')?.checked || false;
@@ -391,11 +478,11 @@ async function startDownload() {
     });
 
     if (result.success) {
-      appendLog('[Hệ thống] Tải xuống hoàn tất thành công!');
+      appendLog(`[${t('log.success')}]`);
       if (result.files && result.files.length > 0) {
-        appendLog(`[Hệ thống] Tìm thấy tệp tin: ${result.files.join(', ')}`);
+        appendLog(`[${t('log.filesFound')}] ${result.files.join(', ')}`);
       } else {
-        appendLog('[Hệ thống] Cảnh báo: Không phát hiện được đường dẫn tệp tin trong nhật ký.');
+        appendLog(`[${t('log.noFiles')}]`);
       }
       
       // Save item to history
@@ -417,7 +504,7 @@ async function startDownload() {
 
       // Show notification/alert
       new Notification('YT-DLP Downloader', {
-        body: `Đã tải xong: ${currentVideoInfo.title}`
+        body: `${t('notification.body')}: ${currentVideoInfo.title}`
       });
 
       // Clear URL and reset UI after a delay
@@ -430,8 +517,8 @@ async function startDownload() {
 
     }
   } catch (error) {
-    appendLog(`[Lỗi] ${error.message}`);
-    showError(`Lỗi tải xuống: ${error.message}`);
+    appendLog(`[${t('log.error_prefix')}] ${error.message}`);
+    showError(`${t('error.downloadFailed')}: ${error.message}`);
     progressSection.classList.add('hidden');
     previewSection.classList.remove('hidden');
     btnAnalyze.disabled = false;
@@ -442,12 +529,12 @@ async function startDownload() {
 async function cancelActiveDownload() {
   if (!currentDownloadId) return;
 
-  appendLog('[Hệ thống] Đang hủy tiến trình tải...');
+    appendLog(`[${t('log.cancelling')}]`);
   try {
     const canceled = await window.api.cancelDownload(currentDownloadId);
     if (canceled) {
-      appendLog('[Hệ thống] Đã hủy tải xuống bởi người dùng.');
-      showError('Đã hủy tải xuống.');
+      appendLog(`[${t('log.cancelled')}]`);
+      showError(t('error.canceled'));
       
       setTimeout(() => {
         progressSection.classList.add('hidden');
@@ -457,7 +544,7 @@ async function cancelActiveDownload() {
     }
   } catch (err) {
     console.error(err);
-    appendLog(`[Lỗi khi hủy] ${err.message}`);
+    appendLog(`[${t('log.cancel_error')}] ${err.message}`);
   }
 }
 
@@ -479,7 +566,7 @@ function toggleConsoleLog() {
 // Render history
 function renderHistory() {
   if (history.length === 0) {
-    historyList.innerHTML = '<div class="empty-history">Chưa có tệp nào được tải xuống gần đây.</div>';
+    historyList.innerHTML = `<div class="empty-history">${t('history.empty')}</div>`;
     return;
   }
 
@@ -531,12 +618,12 @@ function renderHistory() {
       `;
     }
 
-    const typeLabel = isPlaylist ? `Playlist (${item.entriesCount} bài)` : (isAudio ? 'Audio' : 'Video');
+    const typeLabel = isPlaylist ? `${t('history.type_playlist')} (${item.entriesCount} ${t('history.items')})` : (isAudio ? t('history.type_audio') : t('history.type_video'));
     const hasFile = !isPlaylist && item.filePath;
     const isDraggable = !!(hasFile || item.destDir);
 
     const dragHandleHtml = isDraggable ? `
-      <div class="drag-handle" title="Kéo thả để sao chép hoặc di chuyển tệp tin/thư mục này">
+      <div class="drag-handle" title="${t('history.drag_tooltip')}">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="9" cy="5" r="1.5" fill="currentColor"></circle>
           <circle cx="9" cy="12" r="1.5" fill="currentColor"></circle>
@@ -554,7 +641,7 @@ function renderHistory() {
           <polygon points="5 3 19 12 5 21 5 3"></polygon>
         </svg>
       </button>
-      <button class="btn btn-secondary btn-action-icon btn-copy-file" title="Sao chép tệp tin" data-file="${item.filePath}">
+      <button class="btn btn-secondary btn-action-icon btn-copy-file" title="${t('btn.copyFile')}" data-file="${item.filePath}">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -570,17 +657,17 @@ function renderHistory() {
         </div>
         <div class="history-item-details">
           <div class="history-item-title" title="${item.title}">${item.title}</div>
-          <div class="history-item-meta">${typeLabel} • ${item.quality} • Lưu vào: ${item.destDir} • ${item.date}</div>
+          <div class="history-item-meta">${typeLabel} • ${item.quality} • ${t('history.saved_to')}: ${item.destDir} • ${item.date}</div>
         </div>
       </div>
       <div class="history-item-actions">
         ${fileActionsHtml}
-        <button class="btn btn-secondary btn-action-icon btn-open-folder" title="Mở thư mục lưu" data-dir="${item.destDir}">
+        <button class="btn btn-secondary btn-action-icon btn-open-folder" title="${t('btn.openFolder')}" data-dir="${item.destDir}">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
           </svg>
         </button>
-        <button class="btn btn-danger btn-action-icon btn-delete-history" title="Xóa lịch sử" data-id="${item.id}">
+        <button class="btn btn-danger btn-action-icon btn-delete-history" title="${t('btn.deleteHistory')}" data-id="${item.id}">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"></polyline>
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -623,14 +710,14 @@ function renderHistory() {
             const originalColor = btnCopyFile.style.color;
             btnCopyFile.style.color = '#10b981'; // Green
             const originalTitle = btnCopyFile.title;
-            btnCopyFile.title = 'Đã sao chép!';
+            btnCopyFile.title = t('history.copy_success');
             
             setTimeout(() => {
               btnCopyFile.style.color = originalColor;
               btnCopyFile.title = originalTitle;
             }, 1500);
           } else {
-            alert('Không thể sao chép tệp tin này (tệp tin có thể không tồn tại hoặc đã bị di chuyển).');
+            alert(t('history.copy_fail'));
           }
         });
       }
@@ -657,7 +744,7 @@ function deleteHistoryItem(id) {
 
 // Clear all history
 function clearAllHistory() {
-  if (confirm('Bạn có chắc chắn muốn xóa toàn bộ lịch sử tải xuống không?')) {
+  if (confirm(t('history.confirm_delete'))) {
     history = [];
     localStorage.removeItem('yt_dlp_history');
     renderHistory();
@@ -669,7 +756,7 @@ function openSettingsModal() {
   if (settingsOverlay) {
     settingsOverlay.classList.remove('hidden');
     if (settingsDestPathDisplay) {
-      settingsDestPathDisplay.textContent = currentDestPath || 'Chưa chọn thư mục. Vui lòng bấm chọn...';
+      settingsDestPathDisplay.textContent = currentDestPath || t('preview.noDestSettings');
       settingsDestPathDisplay.title = currentDestPath || '';
     }
   }

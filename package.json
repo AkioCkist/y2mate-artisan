@@ -58,6 +58,7 @@
       "preload.js",
       "renderer.js",
       "bin-downloader.js",
+      "i18n.js",
       "package.json"
     ],
     "asar": true
