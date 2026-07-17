@@ -59,6 +59,7 @@
       "renderer.js",
       "bin-downloader.js",
       "i18n.js",
+      "icon/**",
       "package.json"
     ],
     "asar": true

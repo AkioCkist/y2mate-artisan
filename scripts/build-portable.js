@@ -34,7 +34,26 @@ if (!fs.existsSync(TARGET_DIR)) {
 }
 
 const destPath = path.join(TARGET_DIR, EXE_NAME);
-fs.copyFileSync(exePath, destPath);
+
+// Kill old process if running (avoids EBUSY)
+try {
+  execSync('taskkill /f /im y2mate.exe 2>nul || exit /b 0', { stdio: 'pipe' });
+} catch (_) {}
+
+// Copy with retry on EBUSY
+for (let attempt = 0; attempt < 3; attempt++) {
+  try {
+    fs.copyFileSync(exePath, destPath);
+    break;
+  } catch (err) {
+    if (err.code === 'EBUSY' && attempt < 2) {
+      console.log(`[build:portable] File locked, retrying in 1s... (attempt ${attempt + 1})`);
+      execSync('timeout /t 1 /nobreak >nul', { stdio: 'pipe' });
+    } else {
+      throw err;
+    }
+  }
+}
 console.log(`[build:portable] Copied ${exePath} → ${destPath}`);
 
 // Auto-add to User PATH if missing
