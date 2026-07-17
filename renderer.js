@@ -56,6 +56,11 @@ let history = JSON.parse(localStorage.getItem('yt_dlp_history') || '[]');
 let currentPlaylistIndex = 0;
 let totalPlaylistItems = 0;
 
+// Per-track download options (playlist only) — Map<index, { formatType, quality }>
+// null/undefined means "use global defaults"
+let perTrackOptions = new Map();
+let selectedTrackIdx = null; // null = global config mode
+
 // Default qualities — translated via i18n
 function getVideoQualities() {
   return [
@@ -148,14 +153,8 @@ async function init() {
     if (e.key === 'Enter') analyzeUrl();
   });
 
-  typeVideo.addEventListener('change', () => {
-    if (currentVideoInfo && !currentVideoInfo.isPlaylist && currentVideoInfo.formats) {
-      populateQualities('video', currentVideoInfo.formats);
-    } else {
-      populateQualities('video');
-    }
-  });
-  typeAudio.addEventListener('change', () => populateQualities('audio'));
+  typeVideo.addEventListener('change', onFormatTypeChange);
+  typeAudio.addEventListener('change', onFormatTypeChange);
 
   btnBrowse.addEventListener('click', selectDestDirectory);
   btnDownload.addEventListener('click', startDownload);
@@ -166,6 +165,10 @@ async function init() {
 
   btnSelectAll.addEventListener('click', () => toggleAllEntries(true));
   btnDeselectAll.addEventListener('click', () => toggleAllEntries(false));
+
+  // Deselect track button
+  const deselectBtn = document.getElementById('btn-deselect-track');
+  if (deselectBtn) deselectBtn.addEventListener('click', deselectTrack);
 
   // Settings Event Listeners
   if (btnOpenSettings) btnOpenSettings.addEventListener('click', openSettingsModal);
@@ -223,6 +226,21 @@ async function init() {
   });
 }
 
+// Handle format type toggle (video/audio) — respects per-track mode
+function onFormatTypeChange() {
+  const isVideo = typeVideo.checked;
+  if (selectedTrackIdx !== null) {
+    // In per-track mode: update options and save
+    populateQualities(isVideo ? 'video' : 'audio', null);
+    const newFmt = isVideo ? 'video' : 'audio';
+    perTrackOptions.set(selectedTrackIdx, { formatType: newFmt, quality: selectQuality.value });
+  } else if (currentVideoInfo && !currentVideoInfo.isPlaylist && currentVideoInfo.formats) {
+    populateQualities('video', currentVideoInfo.formats);
+  } else {
+    populateQualities(isVideo ? 'video' : 'audio');
+  }
+}
+
 // Populate quality choices
 // For video: dynamic resolutions from formats; for audio: static presets
 function populateQualities(type, formats) {
@@ -250,42 +268,147 @@ function populateQualities(type, formats) {
   });
 }
 
-// Render playlist items checklist
+// Per-track options storage
+function getTrackOptions(idx) {
+  return perTrackOptions.get(idx) || null;
+}
+
+function setTrackOptions(idx, opts) {
+  if (opts) perTrackOptions.set(idx, opts);
+  else perTrackOptions.delete(idx);
+}
+
+// ─── Per-track config: select/deselect track → main config section ───
+function selectTrack(idx) {
+  const entries = currentVideoInfo.entries;
+  if (!entries || !entries[idx]) return;
+
+  // Deselect previous
+  document.querySelectorAll('.playlist-entry-item').forEach(el => el.classList.remove('track-selected'));
+
+  selectedTrackIdx = idx;
+  const itemEl = document.querySelector(`.playlist-entry-checkbox[data-index="${idx}"]`)?.closest('.playlist-entry-item');
+  if (itemEl) itemEl.classList.add('track-selected');
+
+  // Show track indicator + update thumbnail/duration in preview
+  const indicator = document.getElementById('track-indicator');
+  const nameEl = document.getElementById('track-indicator-name');
+  if (indicator && nameEl) {
+    const trackTitle = entries[idx].title || `${t('preview.untitled')} #${idx + 1}`;
+    nameEl.textContent = `#${idx + 1}: ${trackTitle}`;
+    indicator.classList.remove('hidden');
+  }
+  // Update thumbnail and duration to match selected track
+  if (entries[idx].thumbnail) {
+    videoThumbnail.src = entries[idx].thumbnail;
+  } else {
+    videoThumbnail.src = currentVideoInfo.thumbnail || '';
+  }
+  const trackDur = entries[idx].duration;
+  if (trackDur) {
+    videoDuration.textContent = formatDuration(trackDur);
+  } else {
+    videoDuration.textContent = currentVideoInfo.duration ? formatDuration(currentVideoInfo.duration) : '00:00';
+  }
+
+  // Load saved per-track options into main config
+  const saved = perTrackOptions.get(idx);
+  const fmt = saved ? saved.formatType : typeVideo.checked ? 'video' : 'audio';
+  const qty = saved ? saved.quality : selectQuality.value;
+
+  if (fmt === 'video') typeVideo.checked = true;
+  else typeAudio.checked = true;
+
+  populateQualities(fmt, null); // static list for tracks
+  if (selectQuality.querySelector(`option[value="${qty}"]`)) selectQuality.value = qty;
+
+  // Save quality change to per-track options
+  const qualityChangeHandler = () => {
+    if (selectedTrackIdx !== null) {
+      perTrackOptions.set(selectedTrackIdx, {
+        formatType: typeVideo.checked ? 'video' : 'audio',
+        quality: selectQuality.value
+      });
+    }
+  };
+  selectQuality.onchange = qualityChangeHandler;
+  // Save initial
+  perTrackOptions.set(idx, { formatType: fmt, quality: qty });
+}
+
+function deselectTrack() {
+  selectedTrackIdx = null;
+  document.querySelectorAll('.playlist-entry-item').forEach(el => el.classList.remove('track-selected'));
+
+  const indicator = document.getElementById('track-indicator');
+  if (indicator) indicator.classList.add('hidden');
+
+  // Restore global format/quality
+  const savedType = localStorage.getItem('yt_dlp_global_type') || 'video';
+  if (savedType === 'video') typeVideo.checked = true;
+  else typeAudio.checked = true;
+
+  if (currentVideoInfo && !currentVideoInfo.isPlaylist && currentVideoInfo.formats) {
+    populateQualities('video', currentVideoInfo.formats);
+  } else {
+    populateQualities(savedType);
+  }
+  selectQuality.value = selectQuality.querySelector('option')?.value || 'best';
+
+  // Restore original playlist thumbnail/duration
+  if (currentVideoInfo && currentVideoInfo.thumbnail) {
+    videoThumbnail.src = currentVideoInfo.thumbnail;
+  }
+  if (currentVideoInfo && currentVideoInfo.duration) {
+    videoDuration.textContent = formatDuration(currentVideoInfo.duration);
+  } else if (currentVideoInfo && currentVideoInfo.entriesCount) {
+    videoDuration.textContent = `${currentVideoInfo.entriesCount} ${t('preview.tracks')}`;
+  }
+
+  selectQuality.onchange = null;
+}
+
+// Render playlist items — click row to select for per-track config
 function renderPlaylistEntries(entries) {
   playlistEntriesList.innerHTML = '';
   if (!entries || entries.length === 0) {
     playlistEntriesList.innerHTML = `<div class="empty-history">${t('playlist.empty')}</div>`;
     return;
   }
-  
+
+  perTrackOptions = new Map();
+  selectedTrackIdx = null;
+  document.getElementById('track-indicator')?.classList.add('hidden');
+
   entries.forEach((entry, idx) => {
     const itemEl = document.createElement('div');
     itemEl.className = 'playlist-entry-item';
-    
-    const durationText = entry.duration ? formatDuration(entry.duration) : '--:--';
-    
-    const thumbHtml = entry.thumbnail 
+    const durText = entry.duration ? formatDuration(entry.duration) : '--:--';
+    const thumbHtml = entry.thumbnail
       ? `<img src="${entry.thumbnail}" class="playlist-entry-thumb" alt="Thumb" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">`
       : '';
-      
     const placeholderHtml = `<div class="playlist-entry-thumb-placeholder" style="${entry.thumbnail ? 'display: none;' : ''}">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M9 18V5l12-2v13"></path>
-          <circle cx="6" cy="18" r="3"></circle>
-          <circle cx="18" cy="16" r="3"></circle>
-        </svg>
-       </div>`;
+          <path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle>
+        </svg></div>`;
 
     itemEl.innerHTML = `
       <input type="checkbox" class="playlist-entry-checkbox" data-index="${idx}" checked>
       <span class="playlist-entry-index">${idx + 1}</span>
-      <div class="playlist-entry-thumb-wrapper" style="position: relative; width: 48px; height: 27px; flex-shrink: 0;">
-        ${thumbHtml}
-        ${placeholderHtml}
+      <div class="playlist-entry-thumb-wrapper" style="position:relative;width:48px;height:27px;flex-shrink:0;">
+        ${thumbHtml}${placeholderHtml}
       </div>
       <span class="playlist-entry-title" title="${entry.title}">${entry.title}</span>
-      <span class="playlist-entry-duration">${durationText}</span>
+      <span class="playlist-entry-duration">${durText}</span>
     `;
+
+    // Click entire row (except checkbox) to select for per-track config
+    itemEl.addEventListener('click', (e) => {
+      if (e.target.closest('.playlist-entry-checkbox')) return;
+      if (selectedTrackIdx === idx) deselectTrack();
+      else selectTrack(idx);
+    });
+
     playlistEntriesList.appendChild(itemEl);
   });
 }
@@ -421,25 +544,30 @@ async function startDownload() {
   let playlistItemsArg = null;
   let selectedCount = 0;
 
+  // ─── Playlist with per-track options ───
+  let hasCustomOptions = false;
   if (currentVideoInfo.isPlaylist) {
     const checkboxes = playlistEntriesList.querySelectorAll('.playlist-entry-checkbox:checked');
     if (checkboxes.length === 0) {
       showError(t('error.noSelection'));
       return;
     }
-    
-    const selectedIndices = Array.from(checkboxes).map(cb => {
+    selectedCount = checkboxes.length;
+    // Check if any track has custom options
+    checkboxes.forEach(cb => {
       const idx = parseInt(cb.getAttribute('data-index'), 10);
-      return idx + 1; // 1-based index for yt-dlp
+      if (perTrackOptions.has(idx)) hasCustomOptions = true;
     });
-    
-    selectedCount = selectedIndices.length;
-    playlistItemsArg = selectedIndices.join(',');
+    if (!hasCustomOptions) {
+      // All tracks use global options → batch download
+      const selectedIndices = Array.from(checkboxes).map(cb => parseInt(cb.getAttribute('data-index'), 10) + 1);
+      playlistItemsArg = selectedIndices.join(',');
+    }
   }
 
   currentDownloadId = Date.now().toString();
   currentPlaylistIndex = 0;
-  totalPlaylistItems = 0;
+  totalPlaylistItems = hasCustomOptions ? selectedCount : 0;
 
   // Update Progress UI
   downloadingTitle.textContent = (currentVideoInfo.isPlaylist ? t('progress.downloadingPlaylist') : t('progress.downloading')) + ': ' + currentVideoInfo.title;
@@ -449,7 +577,7 @@ async function startDownload() {
   statEta.textContent = `${t('progress.eta')}: --:--`;
   statSize.textContent = `${t('progress.size')}: ${t('progress.mb')}`;
   logConsole.innerHTML = '';
-  
+
   progressSection.classList.remove('hidden');
   previewSection.classList.add('hidden');
   btnAnalyze.disabled = true;
@@ -464,18 +592,61 @@ async function startDownload() {
     const embedMetadata = document.getElementById('chk-embed-metadata')?.checked || false;
     const embedThumbnail = document.getElementById('chk-embed-thumbnail')?.checked || false;
 
-    const result = await window.api.downloadVideo({
-      id: currentDownloadId,
-      url,
-      formatType,
-      quality,
-      destDir: currentDestPath,
-      isPlaylist: currentVideoInfo.isPlaylist || false,
-      playlistTitle: currentVideoInfo.title,
-      playlistItems: playlistItemsArg,
-      embedMetadata,
-      embedThumbnail
-    });
+    let result;
+    if (hasCustomOptions) {
+      // ─── Download each track individually with per-track options ───
+      const checkboxes = playlistEntriesList.querySelectorAll('.playlist-entry-checkbox:checked');
+      const allFiles = [];
+      let trackIndex = 0;
+      for (const cb of checkboxes) {
+        const idx = parseInt(cb.getAttribute('data-index'), 10);
+        const track = currentVideoInfo.entries[idx];
+        if (!track || !track.url) continue;
+        trackIndex++;
+        currentPlaylistIndex = trackIndex;
+        totalPlaylistItems = checkboxes.length;
+        const trackOpts = perTrackOptions.get(idx);
+        const tFormat = trackOpts ? trackOpts.formatType : formatType;
+        const tQuality = trackOpts ? trackOpts.quality : quality;
+        downloadingTitle.textContent = `${t('progress.downloading')} (${trackIndex}/${checkboxes.length}): ${track.title}`;
+        appendLog(`[${t('log.start')}] (${trackIndex}/${checkboxes.length}) ${track.title}`);
+        appendLog(`[${t('log.format')}] ${tFormat === 'video' ? t('log.video_mp4') : t('log.audio_mp3')}`);
+        appendLog(`[${t('log.quality')}] ${tQuality}`);
+        const trackResult = await window.api.downloadVideo({
+          id: currentDownloadId + '-' + idx,
+          url: track.url,
+          formatType: tFormat,
+          quality: tQuality,
+          destDir: currentDestPath,
+          isPlaylist: false,
+          playlistTitle: currentVideoInfo.title,
+          playlistItems: null,
+          embedMetadata,
+          embedThumbnail
+        });
+        if (trackResult.success) {
+          if (trackResult.files) allFiles.push(...trackResult.files);
+          appendLog(`[${t('log.success')}] ${track.title}`);
+        } else {
+          appendLog(`[${t('log.error_prefix')}] ${track.title}`);
+        }
+      }
+      result = { success: allFiles.length > 0, files: allFiles, destDir: currentDestPath };
+    } else {
+      // ─── Batch download (global options) ───
+      result = await window.api.downloadVideo({
+        id: currentDownloadId,
+        url,
+        formatType,
+        quality,
+        destDir: currentDestPath,
+        isPlaylist: currentVideoInfo.isPlaylist || false,
+        playlistTitle: currentVideoInfo.title,
+        playlistItems: playlistItemsArg,
+        embedMetadata,
+        embedThumbnail
+      });
+    }
 
     if (result.success) {
       appendLog(`[${t('log.success')}]`);
@@ -484,14 +655,14 @@ async function startDownload() {
       } else {
         appendLog(`[${t('log.noFiles')}]`);
       }
-      
+
       // Save item to history
       const historyItem = {
         id: currentDownloadId,
         title: currentVideoInfo.title,
         type: formatType,
         isPlaylist: currentVideoInfo.isPlaylist || false,
-        entriesCount: currentVideoInfo.isPlaylist ? selectedCount : 0,
+        entriesCount: selectedCount || 0,
         quality: selectQuality.options[selectQuality.selectedIndex].text,
         destDir: result.destDir || currentDestPath,
         filePath: result.files && result.files.length > 0 ? result.files[result.files.length - 1] : null,
@@ -529,13 +700,19 @@ async function startDownload() {
 async function cancelActiveDownload() {
   if (!currentDownloadId) return;
 
-    appendLog(`[${t('log.cancelling')}]`);
+  appendLog(`[${t('log.cancelling')}]`);
   try {
-    const canceled = await window.api.cancelDownload(currentDownloadId);
+    // Try cancel main ID, then any per-track IDs
+    let canceled = false;
+    try { canceled = await window.api.cancelDownload(currentDownloadId); } catch (_) {}
+    // Also try cancel any running per-track downloads
+    for (let i = 0; i < 50; i++) {
+      try { await window.api.cancelDownload(currentDownloadId + '-' + i); } catch (_) { break; }
+    }
     if (canceled) {
       appendLog(`[${t('log.cancelled')}]`);
       showError(t('error.canceled'));
-      
+
       setTimeout(() => {
         progressSection.classList.add('hidden');
         previewSection.classList.remove('hidden');

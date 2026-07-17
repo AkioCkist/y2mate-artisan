@@ -788,6 +788,32 @@ select:focus { border-color: var(--accent-from); }
   color: var(--text-muted);
 }
 
+/* ─── Track Select / Indicator ─── */
+.track-selected {
+  background: rgba(192, 132, 252, 0.08) !important;
+  border-color: var(--accent-from) !important;
+}
+.track-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent-bg);
+  border: 1px solid rgba(192, 132, 252, 0.2);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-bottom: 4px;
+  font-size: 0.82rem;
+  animation: slideDown 0.2s ease;
+}
+#track-indicator-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--accent-from);
+  font-weight: 500;
+}
+
 /* ─── Settings Overlay ─── */
 .setup-overlay {
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;
