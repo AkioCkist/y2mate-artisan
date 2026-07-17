@@ -1,11 +1,8 @@
 # YT-DLP Premium Downloader
 
 <p align="center">
-  <img src="https://encrypted-tbn1.gstatic.com/images?q=tbn:ANd9GcQwMrImVZAT8f6yUE50e9_QfyWOL2pa6HOLLhwYsl-0nhzd6gUs" alt="YT-DLP Premium Downloader Banner" width="600"/>
+  <img src="https://media.thuvien.org/photo/3929/image/71d0e35d391ee4323089fd1b97d45835.jpg" alt="anime girl, kimono, katana, sakura blossom, profile view, traditional building" width=auto/>
 </p>
-
-> 💬 "I made this myself because I got so tired of y2mate constantly crashing and not working reliably." 😒
-
 
 A modern, high-performance, and beautiful desktop application for downloading media from YouTube and other platforms. Built with **Electron** and powered by **yt-dlp**.
 
